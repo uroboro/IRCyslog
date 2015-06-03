@@ -1,11 +1,11 @@
-export THEOS_PACKAGE_DIR_NAME=packages
+export THEOS_PACKAGE_DIR_NAME = packages
 
 T := $(shell ./theossymlinkfix.sh)
 
 include theos/makefiles/common.mk
 
 TOOL_NAME = IRCyslog
-IRCyslog_FILES = main.mm 
+IRCyslog_FILES = main.c
 
 include $(THEOS_MAKE_PATH)/tool.mk
 
