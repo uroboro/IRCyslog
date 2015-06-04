@@ -41,6 +41,7 @@ int print_message(char mode, const char format[], ...) {
 void print_usage(int argc, char **argv) {
 	print_message(0, "Usage: %s [OPTION...]\n", basename(argv[0]));
 	print_message(0, "  -s, --server  Start the program as the server daemon.\n");
+//	print_message(0, "  -q, --quit    Stop the program as the server daemon.\n");
 	print_message(0, "  -1, --start   Start the IRC server and IRC bot.\n");
 	print_message(0, "  -0, --stop    Stop the IRC server and IRC bot.\n");
 //	print_message(0, "  -d, --debug   Show debugging messages.\n");
@@ -194,12 +195,19 @@ int runDaemonRun(void) {
 					if (debug) print_message(0, "Started ngircd with pid:%d\n", ngircdPid);
 				}
 			}
+
+			// Start the IRC bot
+			// ...
+
 		}
 
 		// Value in file descriptor matches token for stop notification
 		// or the quit notification was posted
 		if (t == stopToken || !shouldContinue) {
 			if (debug) print_message(0, "stopping");
+
+			// Stop the IRC bot
+			// ...
 
 			if (!ps) { // If the server is running, kill it
 				if (debug) print_message(0, "Calling kill with (%d, %d)\n", ngircdPid, SIGTERM);
