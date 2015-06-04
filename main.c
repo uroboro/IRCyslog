@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <stdarg.h>
 #include <getopt.h>
+#include <libgen.h>
 #include <syslog.h>
 #include <notify.h>
 #include <spawn.h>
@@ -10,22 +11,49 @@
 #include <signal.h>
 #include <arpa/inet.h>
 
-static const char *syslogPrefix = "\x1b[1;34m[IRCyslog]\x1b[0m";
-
 static const char *quitNotification  = "com.ircyslog.quit";
 static const char *startNotification = "com.ircyslog.start";
 static const char *stopNotification  = "com.ircyslog.stop";
 static const char *debugNotification = "com.ircyslog.debug";
 
-void print_usage(int argc, char **argv) {
-	const char *notifications[] = { NULL, quitNotification, startNotification, stopNotification, debugNotification };
-	int nSize = sizeof(notifications)/sizeof(char *);
+int print_message(char mode, const char format[], ...) {
+	int r;
+	if (isatty(STDIN_FILENO)) {
+		va_list args;
+		va_start(args, format);
+		r = vfprintf(mode ? stderr : stdout, format, args);
+		va_end(args);
+	} else {
+		static char buffer[8<<6];
+		memset(buffer, 0, sizeof(buffer));
 
-	syslog(LOG_WARNING, "%s Use 1-%d as arguments to send notifications to the daemon.", syslogPrefix, nSize);
-	for (int i = 1; i < nSize; i++) {
-		syslog(LOG_WARNING, "%s %d: %s.", syslogPrefix, i, notifications[i]);
+		va_list args;
+		va_start(args, format);
+		r = vsprintf(buffer, format, args);
+		va_end(args);
+
+		const char *syslogPrefix = "\x1b[1;34m[IRCyslog]\x1b[0m";
+		syslog(mode ? LOG_ERR : LOG_WARNING, "%s %s", syslogPrefix, buffer);
 	}
+	return r;
 }
+
+void print_usage(int argc, char **argv) {
+	print_message(0, "Usage: %s [OPTION...]\n", basename(argv[0]));
+	print_message(0, "  -s, --server  Start the program as the server daemon.\n");
+	print_message(0, "  -1, --start   Start the IRC server and IRC bot.\n");
+	print_message(0, "  -0, --stop    Stop the IRC server and IRC bot.\n");
+//	print_message(0, "  -d, --debug   Show debugging messages.\n");
+	print_message(0, "  -h, --help    Show this text.\n");
+}
+
+uint32_t post(const char *notification) {
+	uint32_t r = notify_post(notification);
+	print_message(0, "%sPosted \"%s\".\n", (r)?"not ":"", notification);
+	return r;
+}
+
+int runDaemonRun(void);
 
 int main(int argc, char **argv, char **envp) {
 	if (argc != 2) {
@@ -88,29 +116,24 @@ int main(int argc, char **argv, char **envp) {
 		return 1;
 	}
 
-	if (server_flag && (start_flag || stop_flag)) {
-		fprintf(stderr, "No files to compare.\n");
-		return 1;
-	}
-
 	if (start_flag) {
-		uint32_t r = notify_post(startNotification);
-		fprintf(stdout, "%sposted \"%s\".", (r)?"not ":"", startNotification);
-		return 0;
+		return post(startNotification);
 	}
 	if (stop_flag) {
-		uint32_t r = notify_post(stopNotification);
-		fprintf(stdout, "%sposted \"%s\".", (r)?"not ":"", stopNotification);
-		return 0;
+		return post(stopNotification);
 	}
 	if (debug_flag) {
-		uint32_t r = notify_post(startNotification);
-		fprintf(stdout, "%sposted \"%s\".", (r)?"not ":"", startNotification);
-		return 0;
+		return post(debugNotification);
 	}
 
-	// Daemon
+	if (server_flag) {
+		return runDaemonRun();
+	}
 
+	return 0;
+}
+
+int runDaemonRun(void) {
 	// Register for all the notifications
 	int fd;
 	int quitToken = 0;
@@ -130,7 +153,7 @@ int main(int argc, char **argv, char **envp) {
 		return 1;
 	}
 
-	syslog(LOG_WARNING, "%s started as %d(%d):%d(%d)", syslogPrefix, getuid(), geteuid(), getgid(), getegid());
+	print_message(0, "Started as %d(%d):%d(%d)\n", getuid(), geteuid(), getgid(), getegid());
 
 	fd_set readfds;
 	FD_ZERO(&readfds);
@@ -156,19 +179,19 @@ int main(int argc, char **argv, char **envp) {
 
 		// Value in file descriptor matches token for quit notification
 		if (t == quitToken) {
-			if (debug) syslog(LOG_WARNING, "%s quitting", syslogPrefix);
+			if (debug) print_message(0, "Quitting\n");
 			shouldContinue = 0;
 		}
 
 		// Value in file descriptor matches token for start notification
 		if (t == startToken) {
-			if (debug) syslog(LOG_WARNING, "%s starting", syslogPrefix);
+			if (debug) print_message(0, "Starting\n");
 			// Start ngircd as non-daemon, using custom config file
 			const char *args[] = {"ngircd", "-n", "-f", "/Library/Application Support/IRCyslog/ircyslog.conf", NULL};
 			if (!ngircdPid) {
 				ps = posix_spawn(&ngircdPid, "/usr/sbin/ngircd", NULL, NULL, (char *const *)args, NULL);
 				if (!ps) {
-					if (debug) syslog(LOG_WARNING, "%s started ngircd with pid:%d", syslogPrefix, ngircdPid);
+					if (debug) print_message(0, "Started ngircd with pid:%d\n", ngircdPid);
 				}
 			}
 		}
@@ -176,18 +199,18 @@ int main(int argc, char **argv, char **envp) {
 		// Value in file descriptor matches token for stop notification
 		// or the quit notification was posted
 		if (t == stopToken || !shouldContinue) {
-			if (debug) syslog(LOG_WARNING, "%s stopping", syslogPrefix);
+			if (debug) print_message(0, "stopping");
 
 			if (!ps) { // If the server is running, kill it
-				if (debug) syslog(LOG_WARNING, "%s calling kill with (%d, %d)", syslogPrefix, ngircdPid, SIGTERM);
+				if (debug) print_message(0, "Calling kill with (%d, %d)\n", ngircdPid, SIGTERM);
 				int k = kill(ngircdPid, SIGTERM);
-				if (debug) syslog(LOG_WARNING, "%s kill'd with exit status %d", syslogPrefix, k);
+				if (debug) print_message(0, "kill'd with exit status %d\n", k);
 
 				// Wait for the server to finish and purge from the process list
 				int st;
-				if (debug) syslog(LOG_WARNING, "%s calling waitpid with (%d,%d)", syslogPrefix, ngircdPid, 0);
+				if (debug) print_message(0, "Calling waitpid with (%d,%d)\n", ngircdPid, 0);
 				int w = waitpid(ngircdPid, &st, 0);
-				if (debug) syslog(LOG_WARNING, "%s waitpid'd with exit status %d, stat_loc %d", syslogPrefix, w, st);
+				if (debug) print_message(0, "waitpid'd with exit status %d, stat_loc %d\n", w, st);
 			}
 		}
 
