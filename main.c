@@ -1,5 +1,8 @@
 #include <stdio.h>
+#include <string.h>
 #include <stdlib.h>
+#include <stdarg.h>
+#include <getopt.h>
 #include <syslog.h>
 #include <notify.h>
 #include <spawn.h>
@@ -14,20 +17,95 @@ static const char *startNotification = "com.ircyslog.start";
 static const char *stopNotification  = "com.ircyslog.stop";
 static const char *debugNotification = "com.ircyslog.debug";
 
+void print_usage(int argc, char **argv) {
+	const char *notifications[] = { NULL, quitNotification, startNotification, stopNotification, debugNotification };
+	int nSize = sizeof(notifications)/sizeof(char *);
+
+	syslog(LOG_WARNING, "%s Use 1-%d as arguments to send notifications to the daemon.", syslogPrefix, nSize);
+	for (int i = 1; i < nSize; i++) {
+		syslog(LOG_WARNING, "%s %d: %s.", syslogPrefix, i, notifications[i]);
+	}
+}
+
 int main(int argc, char **argv, char **envp) {
-	if (argc > 1) {
-		const char *notifications[] = { NULL, quitNotification, startNotification, stopNotification, debugNotification };
-		int nSize = sizeof(notifications)/sizeof(char *);
-		int n = atoi(argv[1]);
-		if (n <= 0 || n >= nSize) { // Print help text
-			syslog(LOG_WARNING, "%s Use 1-%d as arguments to send notifications to the daemon.", syslogPrefix, nSize);
-			for (int i = 1; i < nSize; i++) {
-				syslog(LOG_WARNING, "%s %d: %s.", syslogPrefix, i, notifications[i]);
-			}
-			return 0;
+	if (argc != 2) {
+		print_usage(argc, argv);
+		return 0;
+	}
+
+	//flags
+	int server_flag = 0;
+	int start_flag = 0;
+	int stop_flag = 0;
+	int debug_flag = 0;
+	int help_flag = 0;
+
+	//process options
+	struct option long_options[] = {
+		/* Flag options. */
+		{"server",		no_argument,		&server_flag,	1},
+		{"start",		no_argument,		&start_flag,	1},
+		{"stop",		no_argument,		&stop_flag,		1},
+		{"debug",		no_argument,		&debug_flag,	1},
+		{"help",		no_argument,		&help_flag,		1},
+		/* End of options. */
+		{0, 0, 0, 0}
+	};
+	int opt;
+	int option_index = 0;
+	while ((opt = getopt_long(argc, argv, "s01dh", long_options, &option_index)) != -1) {
+		switch (opt) {
+		case 's':
+			server_flag = 1;
+			break;
+
+		case '1':
+			start_flag = 1;
+			break;
+
+		case '0':
+			stop_flag = 1;
+			break;
+
+		case 'd':
+			debug_flag = 1;
+			break;
+
+		case 'h':
+			help_flag = 1;
+			break;
+
+/*
+		default:
+			print_usage(argc, argv);
+			exit(EXIT_FAILURE);
+*/
 		}
-		uint32_t r = notify_post(notifications[n]);
-		syslog(LOG_WARNING, "%s %sposted \"%s\".", syslogPrefix, (r)?"not ":"", notifications[n]);
+	}
+
+	if (help_flag) {
+		print_usage(argc, argv);
+		return 1;
+	}
+
+	if (server_flag && (start_flag || stop_flag)) {
+		fprintf(stderr, "No files to compare.\n");
+		return 1;
+	}
+
+	if (start_flag) {
+		uint32_t r = notify_post(startNotification);
+		fprintf(stdout, "%sposted \"%s\".", (r)?"not ":"", startNotification);
+		return 0;
+	}
+	if (stop_flag) {
+		uint32_t r = notify_post(stopNotification);
+		fprintf(stdout, "%sposted \"%s\".", (r)?"not ":"", stopNotification);
+		return 0;
+	}
+	if (debug_flag) {
+		uint32_t r = notify_post(startNotification);
+		fprintf(stdout, "%sposted \"%s\".", (r)?"not ":"", startNotification);
 		return 0;
 	}
 

@@ -8,8 +8,11 @@
 	<string>com.uroboro.daemon.ircyslog</string>
 	<key>OnDemand</key>
 	<false/>
-	<key>Program</key>
-	<string>/usr/bin/IRCyslog</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/usr/bin/IRCyslog</string>
+		<string>--server</string>
+	</array>
 	<key>RunAtLoad</key>
 	<true/>
 	<key>StandardErrorPath</key>
