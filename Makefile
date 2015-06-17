@@ -6,7 +6,7 @@ T := $(shell ./theossymlinkfix.sh)
 include theos/makefiles/common.mk
 
 TOOL_NAME = IRCyslog
-IRCyslog_FILES = main.c
+IRCyslog_FILES = $(foreach ext, c cpp m mm x xm xi xmi, $(wildcard sources/*.$(ext)))
 
 include $(THEOS_MAKE_PATH)/tool.mk
 
