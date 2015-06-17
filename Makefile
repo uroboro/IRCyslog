@@ -1,4 +1,5 @@
-export THEOS_PACKAGE_DIR_NAME = packages
+export TARGET = iphone:clang:8.1:6.1
+export ARCHS = armv7 arm64
 
 T := $(shell ./theossymlinkfix.sh)
 
