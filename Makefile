@@ -7,6 +7,7 @@ include theos/makefiles/common.mk
 
 TOOL_NAME = IRCyslog
 IRCyslog_FILES = $(foreach ext, c cpp m mm x xm xi xmi, $(wildcard sources/*.$(ext)))
+IRCyslog_LDFLAGS = -luIRCClient
 
 include $(THEOS_MAKE_PATH)/tool.mk
 

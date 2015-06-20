@@ -11,10 +11,13 @@
 #include <signal.h>
 #include <arpa/inet.h>
 
-static const char *quitNotification  = "com.ircyslog.quit";
+#include "bot.h"
+#include "ondeviceconsole.h"
+
 static const char *startNotification = "com.ircyslog.start";
 static const char *stopNotification  = "com.ircyslog.stop";
 static const char *debugNotification = "com.ircyslog.debug";
+static const char *quitNotification  = "com.ircyslog.quit";
 
 int print_message(char mode, const char format[], ...) {
 	int r;
@@ -41,9 +44,10 @@ int print_message(char mode, const char format[], ...) {
 void print_usage(int argc, char **argv) {
 	print_message(0, "Usage: %s [OPTION...]\n", basename(argv[0]));
 	print_message(0, "  -s, --server  Start the program as the server daemon.\n");
-//	print_message(0, "  -q, --quit    Stop the program as the server daemon.\n");
 	print_message(0, "  -1, --start   Start the IRC server and IRC bot.\n");
 	print_message(0, "  -0, --stop    Stop the IRC server and IRC bot.\n");
+	print_message(0, "  -b, --bot     Start the IRC bot.\n");
+//	print_message(0, "  -q, --quit    Stop the program as the server daemon.\n");
 //	print_message(0, "  -d, --debug   Show debugging messages.\n");
 	print_message(0, "  -h, --help    Show this text.\n");
 }
@@ -55,6 +59,7 @@ uint32_t post(const char *notification) {
 }
 
 int runDaemonRun(void);
+int runBotRun(void);
 
 int main(int argc, char **argv, char **envp) {
 	if (argc != 2) {
@@ -66,6 +71,8 @@ int main(int argc, char **argv, char **envp) {
 	int server_flag = 0;
 	int start_flag = 0;
 	int stop_flag = 0;
+	int quit_flag = 0;
+	int bot_flag = 0;
 	int debug_flag = 0;
 	int help_flag = 0;
 
@@ -75,6 +82,8 @@ int main(int argc, char **argv, char **envp) {
 		{"server",		no_argument,		&server_flag,	1},
 		{"start",		no_argument,		&start_flag,	1},
 		{"stop",		no_argument,		&stop_flag,		1},
+		{"bot",			no_argument,		&bot_flag,		1},
+		{"quit",		no_argument,		&quit_flag,		1},
 		{"debug",		no_argument,		&debug_flag,	1},
 		{"help",		no_argument,		&help_flag,		1},
 		/* End of options. */
@@ -82,18 +91,26 @@ int main(int argc, char **argv, char **envp) {
 	};
 	int opt;
 	int option_index = 0;
-	while ((opt = getopt_long(argc, argv, "s01dh", long_options, &option_index)) != -1) {
+	while ((opt = getopt_long(argc, argv, "01bsqdh", long_options, &option_index)) != -1) {
 		switch (opt) {
+
 		case 's':
 			server_flag = 1;
 			break;
-
 		case '1':
 			start_flag = 1;
 			break;
 
 		case '0':
 			stop_flag = 1;
+			break;
+
+		case 'b':
+			bot_flag = 1;
+			break;
+
+		case 'q':
+			quit_flag = 1;
 			break;
 
 		case 'd':
@@ -123,12 +140,18 @@ int main(int argc, char **argv, char **envp) {
 	if (stop_flag) {
 		return post(stopNotification);
 	}
+	if (quit_flag) {
+		return post(quitNotification);
+	}
 	if (debug_flag) {
 		return post(debugNotification);
 	}
 
 	if (server_flag) {
 		return runDaemonRun();
+	}
+	if (bot_flag) {
+		return runBotRun();
 	}
 
 	return 0;
@@ -139,19 +162,19 @@ int runDaemonRun(void) {
 	int fd;
 	int quitToken = 0;
 	if (notify_register_file_descriptor(quitNotification, &fd, 0, &quitToken) != NOTIFY_STATUS_OK) {
-		return 1;
+		return 0x10;
 	}
 	int startToken = 0;
 	if (notify_register_file_descriptor(startNotification, &fd, NOTIFY_REUSE, &startToken) != NOTIFY_STATUS_OK) {
-		return 1;
+		return 0x11;
 	}
 	int stopToken = 0;
 	if (notify_register_file_descriptor(stopNotification, &fd, NOTIFY_REUSE, &stopToken) != NOTIFY_STATUS_OK) {
-		return 1;
+		return 0x12;
 	}
 	int debugToken = 0;
 	if (notify_register_file_descriptor(debugNotification, &fd, NOTIFY_REUSE, &debugToken) != NOTIFY_STATUS_OK) {
-		return 1;
+		return 0x14;
 	}
 
 	print_message(0, "Started as %d(%d):%d(%d)\n", getuid(), geteuid(), getgid(), getegid());
@@ -162,7 +185,7 @@ int runDaemonRun(void) {
 
 	pid_t ngircdPid = 0;
 	int ps;
-	char debug = 0;
+	char debug = 1;
 
 	char shouldContinue = 1;
 	while (shouldContinue) {
@@ -174,7 +197,7 @@ int runDaemonRun(void) {
 		int t;
 		status = read(fd, &t, sizeof(int));
 		if (status < 0) {
-			break;
+			continue;
 		}
 		t = ntohl(t); // notify_register_file_descriptor docs: "The value is sent in network byte order."
 
@@ -225,14 +248,27 @@ int runDaemonRun(void) {
 		// Value in file descriptor matches token for debug notification
 		if (t == debugToken) {
 			debug = !debug;
+			print_message(0, "debug is %s\n", debug ? "ON" : "OFF");
 		}
 	}
 
 	// Cancel notification watching
+	print_message(0, "Cancelling notifications\n");
 	notify_cancel(quitToken);
 	notify_cancel(startToken);
 	notify_cancel(stopToken);
 	notify_cancel(debugToken);
 
+	return 0;
+}
+
+int runBotRun(void) {
+	print_message(0, "Starting IRC bot\n");
+	void *bot = makeIRCBot("127.0.0.1", 6667, NULL, "syslog", "C IRC Syslog repeater bot");
+	sleep(1);
+	start_polling(bot);
+	print_message(0, "Stopping IRC bot\n");
+	killIRCBot(bot);
+	bot = NULL;
 	return 0;
 }
