@@ -1,10 +1,11 @@
 Package: com.uroboro.ircyslog
 Name: IRCyslog
-Depends: 
+Depends: com.uroboro.library.uircclient, ngircd
 Version: 0.0.1
 Architecture: iphoneos-arm
-Description: An awesome tool of some sort!!
+Description: IRC syslog repeater.
 Maintainer: uroboro <uroboro845@gmail.com>
 Author: uroboro <uroboro845@gmail.com>
 Section: System
 Tag: role::hacker
+Depiction: http://uroboro.github.io/repo/?p=com.uroboro.ircyslog
